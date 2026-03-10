@@ -1,14 +1,36 @@
-import curses
-import curses.ascii
-import sys
-import pickle
-from collections import Counter
-import argparse
-import re
-import os
-import tokenize
-from io import StringIO
-import keyword
+import curses # for perry
+import curses.ascii # for the curses.ascii.ctrl
+import sys # for shell and other stuff
+import pickle # for settings saving
+from collections import Counter # for the pos saving
+import argparse # for the file arguments
+from io import StringIO # for the shell
+import keyword # for the python syntax keywords
+import code # for the shell
+import re # for the syntax highlighting
+import time # for the saving popup
+
+
+# Color indexes
+KEYWORD_COLOR = 1
+STRING_COLOR  = 2
+NUMBER_COLOR  = 3
+COMMENT_COLOR = 4
+SPACE_COLOR = 5
+FUNCTION_COLOR = 6
+OVERFLOW_COLOR = 7
+SELF_COLOR = 8
+
+class CaptureConsole(code.InteractiveConsole):
+    def runsource(self, source, filename="<input>", symbol="single"):
+        buffer = StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buffer
+        try:
+            super().runsource(source, filename, symbol)
+        finally:
+            sys.stdout = old_stdout
+        return buffer.getvalue()
 
 
 
@@ -18,11 +40,14 @@ class save_file:
         self.settings = {
             "center_scroll":False,
             "show_spaces": False,
-            "python_shell":False
+            "python_shell":False,
+            "shell_size":3,
+            "show_whitespace":True,
+            "remove_all_whitespaces":True
         }
 
     @staticmethod
-    def load(self):
+    def load():
         r=0
         try:
             with open("save_data.pkl" , "rb") as f:
@@ -55,7 +80,7 @@ class Perry:
         parser = argparse.ArgumentParser(prog="Pyon", description="A text editor")
 
 
-        parser.add_argument("filename", help="The name of the file to load")
+        parser.add_argument("filename", nargs="?", help="The name of the file to load")
         parser.add_argument("-n", "--aldsj", help="A testing stuff")
 
 
@@ -63,9 +88,13 @@ class Perry:
 
         # Load Args/Filename
         self.current_file = args.filename
-
+        if "." in self.current_file:
+            self.file_ending = self.current_file.rsplit(".", 1)[-1] if self.current_file else "txt"
+        else:
+            self.current_file += ".txt"
+            self.file_ending = "txt"
         # Load positions/settings
-        self.saved_file = save_file.load(0)
+        self.saved_file = save_file.load()
 
         # curses settings
         curses.noecho()
@@ -75,9 +104,18 @@ class Perry:
         # curses colors
         curses.start_color()
         curses.use_default_colors()
-        for i in range(0, min(curses.COLORS, curses.COLOR_PAIRS - 1)):
-            curses.init_pair(i + 1, i, -1)
 
+        """for i in range(0, min(curses.COLORS, curses.COLOR_PAIRS - 1)):
+            curses.init_pair(i + 1, i, -1)"""
+
+        curses.init_pair(KEYWORD_COLOR, curses.COLOR_BLUE, -1)
+        curses.init_pair(STRING_COLOR, curses.COLOR_GREEN, -1)
+        curses.init_pair(NUMBER_COLOR, curses.COLOR_MAGENTA, -1)
+        curses.init_pair(COMMENT_COLOR, curses.COLOR_RED, -1)
+        curses.init_pair(SPACE_COLOR, curses.COLOR_BLACK, curses.COLOR_GREEN)
+        curses.init_pair(FUNCTION_COLOR, curses.COLOR_CYAN, -1)
+        curses.init_pair(OVERFLOW_COLOR, curses.COLOR_CYAN, -1)
+        curses.init_pair(SELF_COLOR, curses.COLOR_MAGENTA, -1)
 
 
         # text loading
@@ -92,51 +130,161 @@ class Perry:
                 self.text = [""]
 
 
-        #Get pos
+        commands = {
+            "toggle show_whitespace": lambda: not self.saved_file["show_whitespace"]
+        }
+
+        # for command in commands:
+        #     if inp == command[:len(inp)]:
+        #        autocomplete.append(command)
+
+        self.footer_message = ""
+        self.footer_until = 0
+
+    def resize(self):
+        curses.update_lines_cols()
+        height, width = self.stdscr.getmaxyx()
+
+        self.textwidth = width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+        self.buffer_height = height - 3
+        self.x_middle = width // 2 - len(self.title) // 2
+
+        self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
+
+    def text_setup(self):
+        height, width = self.stdscr.getmaxyx()
+
+        # Get pos from save file
         self.y, self.x, self.scroll_start = self.saved_file.positions.get(self.current_file, (0, 0, 0))
 
-
-        # Clamps
-        self.y = max(0, min(self.y, len(self.text) - 1))
-        self.x = max(0, min(self.x, len(self.text[self.y])))
-
+        # Position Vars
         self.tabspace = "    "
         self.PRE_TEXT_WIDTH = 8
         self.AFTER_TEXT_WIDTH = 2
-        self.textwidth = curses.COLS - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
-        self.buffer_height = curses.LINES - 1 - 1
+        self.textwidth = width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+        self.buffer_height = height - 1 - 1 - 1 # header und footer und save space
 
-        # scroll_start
+
+        # Clamps for the loaded stuff
+        self.y = max(0, min(self.y, len(self.text) - 1))
+        self.x = max(0, min(self.x, len(self.text[self.y])))
+
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
-#         # Clamp scroll_start into valid range
-#        self.scroll_start = max(0, self.scroll_start)
-#        self.scroll_start = min(self.scroll_start, max(0, len(text) - self.buffer_height))
 
         # Header stuff
         self.title = (self.current_file or "[No Name]").split("/")[-1]
-        self.x_middle = curses.COLS // 2 - len(self.title) // 2
+        self.x_middle = width // 2 - len(self.title) // 2
 
-        # \|/ <- is for quitting the editor
+        # \|/ is for quitting the editor
         self.game = True
 
+        # How much of the screen the shell gets (1 / x)
+        self.shell_size = self.saved_file.settings["shell_size"]
 
-    def draw_screen(self):
-        self.stdscr.erase()
+        # Syntax highliting
+            # Keywords
+        self.keywords = {
+            "py":keyword.kwlist,
+            "js":["func"],
+            "txt":[]
+        }
 
-        # Title im Header
+            # Patterns for re
 
-        self.stdscr.addstr(0, self.x_middle, self.title)
 
-        # Pyon im Header
-        self.stdscr.addstr(0, 1, "Pyon")
+        self.patterns = []
+        if self.file_ending != "txt":
+            self.patterns.append((
+                re.compile(r"\b\d+\b"),
+                curses.color_pair(3)
+            ))  # Numbers
+
+            self.patterns.append((
+                re.compile(r"\b(%s)\b" % "|".join(map(re.escape, self.keywords[self.file_ending]))),
+                curses.color_pair(1)
+            ))  # Keywords
+
+            if self.file_ending == "py":
+                self.patterns.append((
+                    re.compile(r"\bself\b"),
+                    curses.color_pair(8)
+                )) # Self in python
+
+            self.patterns.append((
+                re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\''),
+                curses.color_pair(2)
+            ))  # Strings
+
+            if self.file_ending == "py":
+                self.patterns.append((
+                    re.compile(r'#.*'),
+                    curses.color_pair(4)
+                ))  # Comments
+
+        self.patterns.append((
+            re.compile(r"[ \t]+$"),
+            curses.color_pair(5)
+        ))  # Trailing whitespace
+
+
+
+#        self.patterns = []
+#        if self.file_ending != "txt":
+#            self.patterns.append((re.compile(r"\b\d+\b"), curses.color_pair(3))) # Numbers
+#            self.patterns.append((re.compile(r"\b(%s)\b" % "|".join(map(re.escape, self.keywords[self.file_ending]))), curses.color_pair(1))) # checks for keywords of current language, join produces an or ("|") arragment and escape reformats potential special characters
+#
+#            self.patterns.append((re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\''), curses.color_pair(2))) # Strings
+#            self.patterns.append((re.compile(r'#.*'), curses.color_pair(4))), # Comments
+#            self.patterns.append((re.compile(r"[ \t]+$"), curses.color_pair(5))) # Trailing Whitespace
+
+
+    def draw_text_color(self, y, x_draw_start, text, text_start, text_end):
+        string_spans = [] # contains all strings
+        self.stdscr.addstr(y, x_draw_start, text[text_start:text_end]) # for all not colored stuff
+        for pattern, color in self.patterns:
+            for match in pattern.finditer(text):
+                start, end = match.span()
+
+                if start >= text_end or end <= text_start: # if word isnt on screen
+                    continue
+
+                if color == curses.color_pair(2): # if word is string
+                    string_spans.append((start, end))
+
+                if color == curses.color_pair(4): # if word is comment
+                     if any(s <= start < e for s, e in string_spans):
+                        continue
+
+
+                start = max(start, text_start)
+                end = min(end, text_end)
+
+
+                self.stdscr.addstr(y, x_draw_start + (start - text_start), text[start:end], color)
+
+
+
+    def draw_body(self):
+        shell_start_x = curses.COLS - (curses.COLS // self.shell_size)
+        if not self.saved_file.settings["python_shell"]:
+            overflow_position = curses.COLS - 2
+            textwidth = self.textwidth
+
+        else:
+            textwidth = self.textwidth - curses.COLS // self.shell_size # - 5
+            overflow_position = shell_start_x - 2
 
         for i in range(self.buffer_height):
-            start = self.textwidth * (self.x // self.textwidth)
-            end = self.textwidth * (self.x // self.textwidth + 1)
+            start = textwidth * (self.x // textwidth)
+            end = textwidth * (self.x // textwidth + 1)
+
+            # if self.saved_file.settings["python_shell"]:
+            #     end -= 5
 
 
             buffer_index = self.scroll_start + i
+
             if buffer_index >= len(self.text):
                 break
 
@@ -145,26 +293,83 @@ class Perry:
 
             line = self.text[buffer_index]
 
-            self.stdscr.addstr(i + 1, 0, f" |{buffer_index + 1:03d}|", curses.color_pair(101010))
-            self.stdscr.addstr(i + 1, 6, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(4))
+            self.stdscr.addstr(i + 1, 0, f" |{buffer_index + 1:03d}|", curses.color_pair(3))
+            self.stdscr.addstr(i + 1, 6, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
 
             if self.saved_file.settings["python_shell"]:
-                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end-self.x_middle])
+#                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end])
+                self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
+                self.stdscr.addstr(i + 1, overflow_position, "|>" if line[end:] else "  ", curses.color_pair(7))
+
+                self.stdscr.addstr(i + 1, shell_start_x, "|")
                 pass
 
             else:
-                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end])
+#                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end])
+                self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
+#                time.sleep(1000000)
+                self.stdscr.addstr(i + 1, curses.COLS - 2, "|>" if line[end:] else "  ", curses.color_pair(7))
 
 
-            self.stdscr.addstr(i + 1, curses.COLS - 2, "|>" if line[end:] else "  ", curses.color_pair(4))
+
+    def set_footer(self, message, duration=3):
+        self.footer_message = message
+        self.footer_until = time.time() + duration
+
+    def draw_footer(self):
+        if time.time() < self.footer_until:
+            height, width = self.stdscr.getmaxyx()
+            y = height - 1
+
+            msg = self.footer_message[:width-1]
+            x = max(0, width - len(self.footer_message))
+            try:
+                self.stdscr.addstr(y, x, msg)#[:curses.COLS])
+            except curses.error:
+                pass
+
+    def draw_screen(self):
+        self.stdscr.erase()
+
+        # Title im Header
+        self.stdscr.addstr(0, self.x_middle, self.title)
+
+        # Pyon im Header
+        self.stdscr.addstr(0, 1, "Pyon")
+
+        # Main Body
+        self.draw_body()
+
+        # Footer
+        self.draw_footer()
+
 
 
         self.stdscr.refresh()
+
+    def update_scroll(self):
+        if self.saved_file.settings["center_scroll"]:
+            self.scroll_start = self.y - self.buffer_height // 2
+            self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
+        else:
+            if self.y < self.scroll_start:
+                self.scroll_start = self.y
+            elif self.y >= (self.scroll_start + self.buffer_height):
+                self.scroll_start = self.y - self.buffer_height + 1
+
+    def update_cursor(self):
+        if self.saved_file.settings["python_shell"]:
+            textwidth = self.textwidth - self.stdscr.getmaxyx()[1] // self.shell_size
+        else:
+            textwidth = self.textwidth
+        relative_y = self.y - self.scroll_start
+        self.stdscr.move(relative_y + 1, self.x % textwidth + self.PRE_TEXT_WIDTH)
 
     def do_input(self):
         y = self.y
         x = self.x
         text = self.text
+
         char = self.stdscr.getch()
 
         match char:
@@ -173,16 +378,27 @@ class Perry:
 
             case _ if char == curses.ascii.ctrl(ord('s')): # Ctrl+S, Save
                 if not self.current_file:
-                    self.current_file = prompt(stdscr, "Save as: ")
+                    self.current_file = prompt(self.stdscr, "Save as: ")
+                self.set_footer("Saved!")
 
                 with open(self.current_file, "w") as f:
                     f.write("\n".join(self.text))
 
-            case _ if char == curses.ascii.ctrl(ord('p')): # Switches the setting for center scroll
+            case _ if char == curses.ascii.ctrl(ord('o')): # Switches the setting for center scroll
                 self.saved_file.settings["center_scroll"] = not self.saved_file.settings["center_scroll"]
 
             case _ if char == curses.ascii.ctrl(ord('l')):
                 self.saved_file.settings["show_spaces"] = not self.saved_file.settings["show_spaces"]
+
+            case _ if char == curses.ascii.ctrl(ord('p')):
+                self.saved_file.settings["python_shell"] = not self.saved_file.settings["python_shell"]
+
+            case _ if char == curses.ascii.ctrl(ord('h')): #
+                if self.saved_file.settings["remove_all_whitespaces"]:
+                    text = [line.rstrip() for line in text]
+                else:
+                    text[y] = text[y].rstrip()
+                x = min(x ,len(text[y]))
 
             case curses.KEY_UP: # Up
                 y = max(0, y - 1)
@@ -199,17 +415,17 @@ class Perry:
                     x -= 1
 
             case curses.KEY_RIGHT: # Right
-                if self.x < len(self.text[self.y]):
-                    self.x += 1
+                if x < len(text[y]):
+                    x += 1
 
-            case 10 | 13:  # Enter
+            case 10 | 13 | curses.KEY_ENTER:  # Enter
                 rest = text[y][x:]
                 text[y] = text[y][:x]
                 text.insert(y + 1, rest)
                 y += 1
                 x = 0
 
-            case curses.KEY_BACKSPACE | 127: # 127 ist oft Backspace in Terminals
+            case curses.KEY_BACKSPACE | 127: # Backspace
                 if x > 0:
                     text[y] = text[y][:x-1] + text[y][x:]
                     x -= 1
@@ -220,66 +436,95 @@ class Perry:
                     y -= 1
                     x = old_x
 
-            case 9: # Tab
-                text[y] = text[y][:x] + tabspace + text[y][x:]
-                x += len(tabspace)
+            case curses.KEY_DC: # Delete
+                if x < len(text[y]):
+                    text[y] = text[y][:x] + text[y][x+1:]
+                elif x == len(text[y]) and y < len(text):
+                    text[y] += text[y + 1]
+                    text.pop(y + 1)
 
-            case curses.KEY_BTAB: # BTab
-                for i in text[y][x-4:x]:
+            case 9: # Tab
+                text[y] = text[y][:x] + self.tabspace + text[y][x:]
+                x += len(self.tabspace)
+
+            case curses.KEY_BTAB: # BackTab
+                for i in self.text[y][x-4:x]:
                     if i != " ":
                         break
                 else:
-                    if text[y][x-4:x] == tabspace:
+                    if text[y][x-4:x] == self.tabspace:
                         text[y] = text[y][:x-4] + text[y][x:]
-                        x -= len(tabspace)
+                        x -= len(self.tabspace)
 
 
-            case curses.KEY_HOME:
+            case 544: # ctrl + Home
+                y = 0
                 x = 0
 
-            case curses.KEY_END:
+            case 539: # ctrl + End
+                y = len(text) - 1
+                x = len(text[-1])
+            case curses.KEY_HOME: # Home
+                x = 0
+
+            case curses.KEY_END: # End
                 x = len(text[y])
+
+            case curses.KEY_PPAGE: # Page up
+                y = max(0, y - self.buffer_height + 1) #
+                self.scroll_start = max(0, self.scroll_start - self.buffer_height + 1)
+                x = min(x, len(text[y]))
+
+
+            case curses.KEY_NPAGE: # Page down
+                y = min(len(text) - 1, y + self.buffer_height - 1)
+                self.scroll_start = min(len(text) - self.buffer_height, self.scroll_start + self.buffer_height - 1)
+                x = min(x, len(text[y]))
+
+            case curses.KEY_RESIZE:
+                self.resize()
+
+
 
             case _ if 32 <= char <= 126:  # Druckbare Zeichen
                 text[y] = text[y][:x] + chr(char) + text[y][x:]
                 x += 1
-        # Cursor Pos changing
-        if self.saved_file.settings["center_scroll"]:
-            self.scroll_start = y - self.buffer_height // 2
-            self.scroll_start = max(0, min(self.scroll_start, max(0, len(text) - self.buffer_height)))
-        else:
-            if y < self.scroll_start:
-                self.scroll_start = y
-            elif y >= (self.scroll_start + self.buffer_height):
-                self.scroll_start = y - self.buffer_height + 1
 
 
         self.y = y
         self.x = x
         self.text = text
 
+class PythonShell:
+    def __init__(self, console):
+        self.console = console
 
 
 
+    def refresh_shell(self):
+        pass
 
 
 def main(stdscr):
     perry = Perry(stdscr)
+    perry.text_setup()
 
+
+    console = CaptureConsole()
+    pyshell = PythonShell(console)
 
     while perry.game:
         perry.draw_screen()
-        # Berechne die relative Zeile auf dem Bildschirm:
-        relative_y = perry.y - perry.scroll_start
-        stdscr.move(relative_y + 1, perry.x % perry.textwidth + perry.PRE_TEXT_WIDTH)
+
+        perry.update_cursor()
 
         perry.do_input()
+        perry.update_scroll()
 
-    perry.saved_file.positions[perry.current_file] = (perry.y, perry.x, perry.scroll_start)
+    if perry.current_file:
+        perry.saved_file.positions[perry.current_file] = (perry.y, perry.x, perry.scroll_start)
     perry.saved_file.save()
 
-
-#filename = sys.argv[-1] if len(sys.argv) > 1 else None
 
 curses.wrapper(main)
 
@@ -293,11 +538,7 @@ curses.wrapper(main)
 
 """
 # Top of file, after imports
-KEYWORD_COLOR = 1
-STRING_COLOR  = 2
-NUMBER_COLOR  = 3
-COMMENT_COLOR = 4
-SPACE_COLOR = 5
+
 
 def get_python_highlight(line):
     highlights = []
@@ -315,7 +556,7 @@ def get_python_highlight(line):
             elif tok_type == tokenize.NAME:
                 if tok.string in keyword.kwlist:
                     highlights.append((start_col, end_col, curses.color_pair(KEYWORD_COLOR)))
-            # You can add more token types if needed
+            # You can add more token types if neededo
     except tokenize.TokenError:
         pass
     return highlights
@@ -337,11 +578,6 @@ file_language = {
 
 
 # In your curses init loop, make sure these pairs exist:
-    curses.init_pair(KEYWORD_COLOR, curses.COLOR_BLUE, -1)
-    curses.init_pair(STRING_COLOR, curses.COLOR_GREEN, -1)
-    curses.init_pair(NUMBER_COLOR, curses.COLOR_MAGENTA, -1)
-    curses.init_pair(COMMENT_COLOR, curses.COLOR_CYAN, -1)
-    curses.init_pair(SPACE_COLOR, curses.COLOR_BLACK, curses.COLOR_GREEN)
 
 
 
