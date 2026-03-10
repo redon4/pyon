@@ -9,17 +9,43 @@ import keyword # for the python syntax keywords
 import code # for the shell
 import re # for the syntax highlighting
 import time # for the saving popup
+import os # for the save file
+
 
 
 # Color indexes
-KEYWORD_COLOR = 1
-STRING_COLOR  = 2
-NUMBER_COLOR  = 3
-COMMENT_COLOR = 4
-SPACE_COLOR = 5
-FUNCTION_COLOR = 6
-OVERFLOW_COLOR = 7
-SELF_COLOR = 8
+colors = {
+    "KEYWORD":[
+        1, curses.COLOR_BLUE, -1
+    ],
+    "STRING":[
+        2, curses.COLOR_GREEN, -1
+    ],
+    "NUMBER":[
+        3, curses.COLOR_MAGENTA, -1
+    ],
+    "COMMENT":[
+        4, curses.COLOR_RED, -1
+    ],
+    "SPACE":[
+        5, curses.COLOR_WHITE, curses.COLOR_GREEN
+    ],
+    "FUNCTION":[
+        6, curses.COLOR_CYAN, -1
+    ],
+    "OVERFLOW":[
+        7, curses.COLOR_CYAN, -1
+    ],
+    "SELF":[
+        8, curses.COLOR_MAGENTA, -1
+    ],
+    "LINENUMBER":[
+        9, curses.COLOR_MAGENTA, -1
+    ]
+}
+
+
+
 
 class CaptureConsole(code.InteractiveConsole):
     def runsource(self, source, filename="<input>", symbol="single"):
@@ -36,21 +62,29 @@ class CaptureConsole(code.InteractiveConsole):
 
 class save_file:
     def __init__(self):
-        self.positions = Counter()
+        self.positions = Counter() # so that the default value is 0
+
         self.settings = {
             "center_scroll":False,
-            "show_spaces": False,
+            "show_spaces":True,
+            "line_numbers":True,
+
+            "auto_indent":True,
+
             "python_shell":False,
             "shell_size":3,
+
             "show_whitespace":True,
-            "remove_all_whitespaces":True
+            "remove_every_line_whitespaces":True,
+            "syntax_color":None
         }
 
-    @staticmethod
-    def load():
+        self.filepath = os.path.expanduser("~/pyon/save_data.pkl")
+
+    def load(self):
         r=0
         try:
-            with open("save_data.pkl" , "rb") as f:
+            with open(self.filepath , "rb") as f:
                 r = pickle.load(f)
 
         except FileNotFoundError:
@@ -59,7 +93,7 @@ class save_file:
         return r
 
     def save(self):
-        with open("save_data.pkl" , "wb") as f:
+        with open(self.filepath , "wb") as f:
             pickle.dump(self, f)
 
 
@@ -88,17 +122,22 @@ class Perry:
 
         # Load Args/Filename
         self.current_file = args.filename
-        if "." in self.current_file:
-            self.file_ending = self.current_file.rsplit(".", 1)[-1] if self.current_file else "txt"
+        if self.current_file:
+            if "." in self.current_file:
+                self.file_ending = self.current_file.rsplit(".", 1)[-1] if self.current_file else "txt"
+            else:
+                self.current_file += ".txt"
+                self.file_ending = "txt"
         else:
-            self.current_file += ".txt"
             self.file_ending = "txt"
         # Load positions/settings
-        self.saved_file = save_file.load()
+        self.saved_file = save_file()
+        self.saved_file = self.saved_file.load()
 
         # curses settings
         curses.noecho()
         curses.cbreak()
+        curses.raw()
         stdscr.keypad(True)
 
         # curses colors
@@ -108,15 +147,9 @@ class Perry:
         """for i in range(0, min(curses.COLORS, curses.COLOR_PAIRS - 1)):
             curses.init_pair(i + 1, i, -1)"""
 
-        curses.init_pair(KEYWORD_COLOR, curses.COLOR_BLUE, -1)
-        curses.init_pair(STRING_COLOR, curses.COLOR_GREEN, -1)
-        curses.init_pair(NUMBER_COLOR, curses.COLOR_MAGENTA, -1)
-        curses.init_pair(COMMENT_COLOR, curses.COLOR_RED, -1)
-        curses.init_pair(SPACE_COLOR, curses.COLOR_BLACK, curses.COLOR_GREEN)
-        curses.init_pair(FUNCTION_COLOR, curses.COLOR_CYAN, -1)
-        curses.init_pair(OVERFLOW_COLOR, curses.COLOR_CYAN, -1)
-        curses.init_pair(SELF_COLOR, curses.COLOR_MAGENTA, -1)
-
+        # Color setup
+        for name, content in colors.items():
+            curses.init_pair(content[0], content[1], content[2])
 
         # text loading
         self.text = [""]  # Liste von Zeilen (Text-Buffer)
@@ -162,7 +195,7 @@ class Perry:
         self.PRE_TEXT_WIDTH = 8
         self.AFTER_TEXT_WIDTH = 2
         self.textwidth = width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
-        self.buffer_height = height - 1 - 1 - 1 # header und footer und save space
+        self.buffer_height = height - 1 - 1 - 1 # header and footer and save space
 
 
         # Clamps for the loaded stuff
@@ -173,7 +206,7 @@ class Perry:
 
 
         # Header stuff
-        self.title = (self.current_file or "[No Name]").split("/")[-1]
+        self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
         self.x_middle = width // 2 - len(self.title) // 2
 
         # \|/ is for quitting the editor
@@ -197,7 +230,7 @@ class Perry:
         if self.file_ending != "txt":
             self.patterns.append((
                 re.compile(r"\b\d+\b"),
-                curses.color_pair(3)
+                curses.color_pair(1)
             ))  # Numbers
 
             self.patterns.append((
@@ -221,11 +254,11 @@ class Perry:
                     re.compile(r'#.*'),
                     curses.color_pair(4)
                 ))  # Comments
-
-        self.patterns.append((
-            re.compile(r"[ \t]+$"),
-            curses.color_pair(5)
-        ))  # Trailing whitespace
+        if self.saved_file.settings["show_spaces"]:
+            self.patterns.append((
+                re.compile(r"[ \t]+$"),
+                curses.color_pair(5)
+            ))  # Trailing whitespace
 
 
 
@@ -293,8 +326,13 @@ class Perry:
 
             line = self.text[buffer_index]
 
-            self.stdscr.addstr(i + 1, 0, f" |{buffer_index + 1:03d}|", curses.color_pair(3))
-            self.stdscr.addstr(i + 1, 6, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
+            if self.saved_file.settings["line_numbers"]:
+                self.PRE_TEXT_WIDTH = 8
+                self.stdscr.addstr(i + 1, 0, f" |{buffer_index + 1:03d}|", curses.color_pair(colors["LINENUMBER"][0]))
+            else:
+                self.PRE_TEXT_WIDTH = 2
+
+            self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
 
             if self.saved_file.settings["python_shell"]:
 #                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end])
@@ -379,6 +417,7 @@ class Perry:
             case _ if char == curses.ascii.ctrl(ord('s')): # Ctrl+S, Save
                 if not self.current_file:
                     self.current_file = prompt(self.stdscr, "Save as: ")
+                    self.title = self.current_file
                 self.set_footer("Saved!")
 
                 with open(self.current_file, "w") as f:
@@ -394,11 +433,46 @@ class Perry:
                 self.saved_file.settings["python_shell"] = not self.saved_file.settings["python_shell"]
 
             case _ if char == curses.ascii.ctrl(ord('h')): #
-                if self.saved_file.settings["remove_all_whitespaces"]:
+                if self.saved_file.settings["remove_every_line_whitespaces"]:
                     text = [line.rstrip() for line in text]
                 else:
                     text[y] = text[y].rstrip()
                 x = min(x ,len(text[y]))
+            case _ if char == curses.ascii.ctrl(ord("n")):
+                self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
+
+            case 27: # alt + ?
+                self.stdscr.nodelay(True)
+                next_ch = self.stdscr.getch()
+                self.stdscr.nodelay(False)
+
+                if next_ch in (127, 8, curses.KEY_BACKSPACE):
+                    left_part = text[y][:x]
+                    right_part = text[y][x:]
+                    del_len = len(text[y])
+                    # delete spaces and tabs
+                    if left_part.endswith((" ", "\t")):
+                        text[y] = left_part.rstrip(" \t") + right_part
+                    # delte word
+                    elif re.search(r"\w$", left_part):
+                        text[y] = re.sub(r"\w+$", "", left_part) + right_part
+                    # delete special characters
+                    else:
+                        text[y] = re.sub(r"[^\w\s]+$", "", left_part) + right_part
+
+                    del_len -= len(text[y])
+                    x -= del_len
+
+                elif next_ch ==  ord("."):
+                        command = prompt(self.stdscr, "")
+                        #self.commands
+
+                elif next_ch == -1:
+                   raise Exception("escape key")
+                else:
+                   raise Exception(f"alt + {next_ch}")
+
+
 
             case curses.KEY_UP: # Up
                 y = max(0, y - 1)
@@ -419,11 +493,29 @@ class Perry:
                     x += 1
 
             case 10 | 13 | curses.KEY_ENTER:  # Enter
-                rest = text[y][x:]
-                text[y] = text[y][:x]
-                text.insert(y + 1, rest)
+                line = text[y]
+                if self.saved_file.settings["auto_indent"]:
+                    indent = line[:len(line) - len(line.lstrip(" \t"))]
+
+                    for end_symbol in (":", "(", "[", "{"): # add an indent if it should be there
+                        if line[:x].rstrip().endswith(end_symbol):
+                            indent += self.tabspace
+                else:
+                    indent = ""
+
+
+
+                rest = line[x:].lstrip(" \t")
+
+                text[y] = line[:x]
+
+                text.insert(y + 1, indent + rest)
+
+
                 y += 1
-                x = 0
+
+                x = min(x, len(indent))
+
 
             case curses.KEY_BACKSPACE | 127: # Backspace
                 if x > 0:
@@ -431,16 +523,17 @@ class Perry:
                     x -= 1
                 elif y > 0: # Zeilen zusammenfügen
                     old_x = len(text[y-1])
-                    text[y-1] += text[y]
+                    text[y-1] += text[y].lstrip()
                     text.pop(y)
                     y -= 1
                     x = old_x
 
             case curses.KEY_DC: # Delete
-                if x < len(text[y]):
+                if x < len(text[y]): # if x not at end of line
                     text[y] = text[y][:x] + text[y][x+1:]
-                elif x == len(text[y]) and y < len(text):
-                    text[y] += text[y + 1]
+
+                elif x == len(text[y]) and y < len(text): # if x at end of line and y isnt the last line
+                    text[y] += text[y + 1].lstrip()
                     text.pop(y + 1)
 
             case 9: # Tab
@@ -588,5 +681,24 @@ class Setup:
         self.compose={} # [id, lines count, (y_start, x, text, color)]
         compose.append("Header":[1, (0, 1, "Pyon", None), (0, x_middle, title, None)])
         compose.append("":["fill", (1, 0, f" |{'line_number':03d}|", 101010), (1, 6, "<|" if line])
+
+
+
+
+
+#curses.init_pair(KEYWORD_COLOR, curses.COLOR_BLUE, -1)
+#curses.init_pair(STRING_COLOR, curses.COLOR_GREEN, -1)
+#curses.init_pair(NUMBER_COLOR, curses.COLOR_MAGENTA, -1)
+#curses.init_pair(COMMENT_COLOR, curses.COLOR_RED, -1)
+#curses.init_pair(SPACE_COLOR, curses.COLOR_BLACK, curses.COLOR_GREEN)
+#curses.init_pair(FUNCTION_COLOR, curses.COLOR_CYAN, -1)
+#curses.init_pair(OVERFLOW_COLOR, curses.COLOR_CYAN, -1)
+#curses.init_pair(SELF_COLOR, curses.COLOR_MAGENTA, -1)
+
+
+
+
+
+
 
 """
