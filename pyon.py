@@ -64,7 +64,7 @@ class save_file:
     def __init__(self):
         self.positions = Counter() # so that the default value is 0
 
-        self.settings = {
+        self.settings = { # default settings
             "center_scroll":False,
             "show_spaces":True,
             "line_numbers":True,
@@ -79,7 +79,7 @@ class save_file:
             "syntax_color":None
         }
 
-        self.filepath = os.path.expanduser("~/pyon/save_data.pkl")
+        self.filepath = os.path.dirname(os.path.abspath(__file__)) + "/save_data.pkl"
 
     def load(self):
         r=0
@@ -89,6 +89,9 @@ class save_file:
 
         except FileNotFoundError:
             r = save_file()
+            #inp = prompt(stdscr, f"\"{self.filepath}\", type another to change: ")
+            #if inp:
+            #    r.filepath = os.path.expanduser(inp)
 
         return r
 
@@ -195,7 +198,7 @@ class Perry:
         self.PRE_TEXT_WIDTH = 8
         self.AFTER_TEXT_WIDTH = 2
         self.textwidth = width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
-        self.buffer_height = height - 1 - 1 - 1 # header and footer and save space
+        self.buffer_height = height - 1 - 1  # header and footer
 
 
         # Clamps for the loaded stuff
@@ -220,7 +223,6 @@ class Perry:
         self.keywords = {
             "py":keyword.kwlist,
             "js":["func"],
-            "txt":[]
         }
 
             # Patterns for re
@@ -233,10 +235,11 @@ class Perry:
                 curses.color_pair(1)
             ))  # Numbers
 
-            self.patterns.append((
-                re.compile(r"\b(%s)\b" % "|".join(map(re.escape, self.keywords[self.file_ending]))),
-                curses.color_pair(1)
-            ))  # Keywords
+            if self.file_ending in self.keywords.keys():
+                self.patterns.append((
+                    re.compile(r"\b(%s)\b" % "|".join(map(re.escape, self.keywords[self.file_ending]))),
+                    curses.color_pair(1)
+                ))  # Keywords
 
             if self.file_ending == "py":
                 self.patterns.append((
@@ -366,6 +369,7 @@ class Perry:
             except curses.error:
                 pass
 
+
     def draw_screen(self):
         self.stdscr.erase()
 
@@ -403,6 +407,16 @@ class Perry:
         relative_y = self.y - self.scroll_start
         self.stdscr.move(relative_y + 1, self.x % textwidth + self.PRE_TEXT_WIDTH)
 
+    def write_file(self):
+        if not self.current_file:
+            self.current_file = prompt(self.stdscr, "Save as: ")
+            self.title = self.current_file
+        self.set_footer("Saved!", 0.01)
+
+        with open(self.current_file, "w") as f:
+            f.write("\n".join(self.text))
+
+
     def do_input(self):
         y = self.y
         x = self.x
@@ -415,13 +429,7 @@ class Perry:
                 self.game = False
 
             case _ if char == curses.ascii.ctrl(ord('s')): # Ctrl+S, Save
-                if not self.current_file:
-                    self.current_file = prompt(self.stdscr, "Save as: ")
-                    self.title = self.current_file
-                self.set_footer("Saved!")
-
-                with open(self.current_file, "w") as f:
-                    f.write("\n".join(self.text))
+               self.write_file()
 
             case _ if char == curses.ascii.ctrl(ord('o')): # Switches the setting for center scroll
                 self.saved_file.settings["center_scroll"] = not self.saved_file.settings["center_scroll"]
@@ -465,7 +473,7 @@ class Perry:
 
                 elif next_ch ==  ord("."):
                         command = prompt(self.stdscr, "")
-                        #self.commands
+                        self.do_command(command)
 
                 elif next_ch == -1:
                    raise Exception("escape key")
@@ -532,7 +540,7 @@ class Perry:
                 if x < len(text[y]): # if x not at end of line
                     text[y] = text[y][:x] + text[y][x+1:]
 
-                elif x == len(text[y]) and y < len(text): # if x at end of line and y isnt the last line
+                elif x == len(text[y]) and y < len(text) - 1: # if x at end of line and y isnt the last line
                     text[y] += text[y + 1].lstrip()
                     text.pop(y + 1)
 
@@ -587,6 +595,37 @@ class Perry:
         self.y = y
         self.x = x
         self.text = text
+
+    def do_command(self, command):
+        command = command.split(" ")
+        match command[0]:
+            case "settings" | "s":
+                match command[1]:
+                    case "toggle" | "t":
+                        self.saved_file.settings[command[-1]] = not self.saved_file.settings[command[-1]]
+                    case "set" | "s":
+                        value = command[-1]
+                        if value.isdigit():
+                            value = int(value)
+                        elif value == "True":
+                            value = True
+                        elif value == "False":
+                            value = False
+
+                        self.saved_file.settings[command[-2]] = value
+            case "q" | "quit":
+                self.game = False
+            case "w" | "write" | "save":
+                self.write_file()
+            case "wq":
+                self.write_file()
+                #self.stdscr.redrawwin()
+                #self.stdscr.refresh()
+                #curses.napms(500)
+                self.game = False
+
+
+
 
 class PythonShell:
     def __init__(self, console):
@@ -694,7 +733,6 @@ class Setup:
 #curses.init_pair(FUNCTION_COLOR, curses.COLOR_CYAN, -1)
 #curses.init_pair(OVERFLOW_COLOR, curses.COLOR_CYAN, -1)
 #curses.init_pair(SELF_COLOR, curses.COLOR_MAGENTA, -1)
-
 
 
 
