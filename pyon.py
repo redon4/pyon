@@ -80,15 +80,16 @@ class save_file:
         }
 
         self.filepath = os.path.dirname(os.path.abspath(__file__)) + "/save_data.pkl"
-
-    def load(self):
+    @classmethod
+    def load(clc):
         r=0
+        standard = clc()
         try:
-            with open(self.filepath , "rb") as f:
+            with open(standard.filepath , "rb") as f:
                 r = pickle.load(f)
 
         except FileNotFoundError:
-            r = save_file()
+            r = standard
             #inp = prompt(stdscr, f"\"{self.filepath}\", type another to change: ")
             #if inp:
             #    r.filepath = os.path.expanduser(inp)
@@ -134,8 +135,7 @@ class Perry:
         else:
             self.file_ending = "txt"
         # Load positions/settings
-        self.saved_file = save_file()
-        self.saved_file = self.saved_file.load()
+        self.saved_file = save_file.load()
 
         # curses settings
         curses.noecho()
@@ -600,9 +600,12 @@ class Perry:
         command = command.split(" ")
         match command[0]:
             case "settings" | "s":
+                if len(command) < 2:
+                    return
                 match command[1]:
                     case "toggle" | "t":
-                        self.saved_file.settings[command[-1]] = not self.saved_file.settings[command[-1]]
+                        if len(command) > 2:
+                            self.saved_file.settings[command[-1]] = not self.saved_file.settings[command[-1]]
                     case "set" | "s":
                         value = command[-1]
                         if value.isdigit():
@@ -642,8 +645,8 @@ def main(stdscr):
     perry.text_setup()
 
 
-    console = CaptureConsole()
-    pyshell = PythonShell(console)
+    #console = CaptureConsole()
+    #pyshell = PythonShell(console)
 
     while perry.game:
         perry.draw_screen()
