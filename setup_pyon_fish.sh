@@ -1,0 +1,1 @@
+cp pyon.fish ~/.config/fish/functions
