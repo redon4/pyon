@@ -1,9 +1,8 @@
-(cd ~/github/pyon
-gst
+git status
 echo "---------------------------------------------------"
 cd release-pyon
-gst
+git status
 echo "---------------------------------------------------"
 cd ../snapshot-pyon
-gst
-)
+git status
+cd ..
