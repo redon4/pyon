@@ -9,8 +9,9 @@ v0.1.0.0: The Basic Update
 - added more temporary hotkeys
 - added basic commands
 
+
 - Bugfixes
 - fixed save_data file position
 - fixed resizing crash
-- fixed delete at end of last line
+- fixed pressing delete at end of last line
 - fixed crash when fileextentsion not .py, .js or .txt
