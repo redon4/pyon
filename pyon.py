@@ -79,7 +79,8 @@ class save_file:
             "syntax_color":None
         }
 
-        self.filepath = os.path.dirname(os.path.abspath(__file__)) + "/save_data.pkl"
+        self.filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "save_data.pkl"))
+    
     @classmethod
     def load(clc):
         r=0

@@ -1,0 +1,16 @@
+v0.1.0.0: The Basic Update
+
+- restructured code
+- added syntax highlighting
+- added README.md
+- added automatic .txt if no type was specified
+- added basic editor functions
+- made filename optional
+- added more temporary hotkeys
+- added basic commands
+
+- Bugfixes
+- fixed save_data file position
+- fixed resizing crash
+- fixed delete at end of last line
+- fixed crash when fileextentsion not .py, .js or .txt

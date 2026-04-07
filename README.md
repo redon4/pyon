@@ -7,7 +7,7 @@ Pyon is a text Editor made in python with the curses package that focuses on cus
 - Python "self" highlighting
 - Show trailing white-space 
 - Keep cursor in the y center 
--  Auto-Indent
+- Auto-Indent
 ### Planned:
 - Auto adding "()[]{}"
 - Python-shell/terminal sidebar
