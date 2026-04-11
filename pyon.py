@@ -10,6 +10,7 @@ import code # for the shell
 import re # for the syntax highlighting
 import time # for the saving popup
 import os # for the save file
+import subprocess # for the command running
 
 
 
@@ -69,6 +70,8 @@ class save_file:
             "show_spaces":True,
             "line_numbers":True,
 
+            "linenumber_filling":"-",
+
             "auto_indent":True,
 
             "python_shell":False,
@@ -80,7 +83,7 @@ class save_file:
         }
 
         self.filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "save_data.pkl"))
-    
+
     @classmethod
     def load(clc):
         r=0
@@ -148,8 +151,8 @@ class Perry:
         curses.start_color()
         curses.use_default_colors()
 
-        """for i in range(0, min(curses.COLORS, curses.COLOR_PAIRS - 1)):
-            curses.init_pair(i + 1, i, -1)"""
+        #for i in range(0, min(curses.COLORS, curses.COLOR_PAIRS - 1)):
+        #    curses.init_pair(i + 1, i, -1)
 
         # Color setup
         for name, content in colors.items():
@@ -188,6 +191,12 @@ class Perry:
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
+    def update_title(self):
+        width = self.stdscr.getmaxyx()[1]
+
+        self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
+        self.x_middle = width // 2 - len(self.title) // 2
+
     def text_setup(self):
         height, width = self.stdscr.getmaxyx()
 
@@ -208,10 +217,9 @@ class Perry:
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
+        #Header
+        self.update_title()
 
-        # Header stuff
-        self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
-        self.x_middle = width // 2 - len(self.title) // 2
 
         # \|/ is for quitting the editor
         self.game = True
@@ -331,8 +339,9 @@ class Perry:
             line = self.text[buffer_index]
 
             if self.saved_file.settings["line_numbers"]:
-                self.PRE_TEXT_WIDTH = 8
-                self.stdscr.addstr(i + 1, 0, f" |{buffer_index + 1:03d}|", curses.color_pair(colors["LINENUMBER"][0]))
+                linenumber_len = len(str(len(self.text)))
+                self.PRE_TEXT_WIDTH = 5 + linenumber_len
+                self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{linenumber_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
             else:
                 self.PRE_TEXT_WIDTH = 2
 
@@ -411,7 +420,7 @@ class Perry:
     def write_file(self):
         if not self.current_file:
             self.current_file = prompt(self.stdscr, "Save as: ")
-            self.title = self.current_file
+            self.update_title()
         self.set_footer("Saved!", 0.01)
 
         with open(self.current_file, "w") as f:
@@ -627,6 +636,15 @@ class Perry:
                 #self.stdscr.refresh()
                 #curses.napms(500)
                 self.game = False
+            case "rn" | "rename":
+#                dir = os.path.abspath(os.path.dirname(__file__))
+#                old_path = os.path.join(dir, self.current_file)
+
+                new_name = prompt(self.stdscr, "New name: ")
+#                new_path = os.path.join(dir, new_name)
+                subprocess.call(f"mv {self.current_file} {new_name}", shell=True)
+                self.current_file = new_name
+                self.update_title()
 
 
 
