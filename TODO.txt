@@ -1,1 +1,2 @@
+- overflow when shell is active
 - bug where ~/.bashrc crashes randomly
