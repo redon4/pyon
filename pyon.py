@@ -107,7 +107,7 @@ class save_file:
 
 def prompt(stdscr, message):
     curses.echo()
-    stdscr.addstr(curses.LINES-1, 0, message)
+    stdscr.addstr(stdscr.getmaxyx()[0]-1, 0, message)
     stdscr.clrtoeol()
     name = stdscr.getstr().decode()
     curses.noecho()
@@ -181,13 +181,18 @@ class Perry:
         self.footer_message = ""
         self.footer_until = 0
 
+        self.height, self.width = self.stdscr.getmaxyx()
+
     def resize(self):
         curses.update_lines_cols()
-        height, width = self.stdscr.getmaxyx()
+        self.height, self.width = self.stdscr.getmaxyx()
 
-        self.textwidth = width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
-        self.buffer_height = height - 3
-        self.x_middle = width // 2 - len(self.title) // 2
+        self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+
+        if self.x // self.textwidth == 0:
+            self.textwidth += 2
+        self.buffer_height = self.height - 2
+        self.x_middle = self.width // 2 - len(self.title) // 2
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
@@ -197,18 +202,20 @@ class Perry:
         self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
         self.x_middle = width // 2 - len(self.title) // 2
 
-    def text_setup(self):
-        height, width = self.stdscr.getmaxyx()
+    @property
+    def line_number_len(self):
+        return len(str(len(self.text)))
 
+    def text_setup(self):
         # Get pos from save file
         self.y, self.x, self.scroll_start = self.saved_file.positions.get(self.current_file, (0, 0, 0))
 
         # Position Vars
         self.tabspace = "    "
-        self.PRE_TEXT_WIDTH = 8
+        self.PRE_TEXT_WIDTH = 5 + self.line_number_len if self.saved_file.settings["line_numbers"] else 2
         self.AFTER_TEXT_WIDTH = 2
-        self.textwidth = width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
-        self.buffer_height = height - 1 - 1  # header and footer
+        self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+        self.buffer_height = self.height - 1 - 1  # header and footer
 
 
         # Clamps for the loaded stuff
@@ -217,9 +224,15 @@ class Perry:
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
+        if self.x // self.textwidth == 0:
+            self.PRE_TEXT_WIDTH -= 2
+            self.textwidth += 2
+
+
         #Header
         self.update_title()
-
+        #Init resizing
+        self.resize()
 
         # \|/ is for quitting the editor
         self.game = True
@@ -277,7 +290,7 @@ class Perry:
 #        self.patterns = []
 #        if self.file_ending != "txt":
 #            self.patterns.append((re.compile(r"\b\d+\b"), curses.color_pair(3))) # Numbers
-#            self.patterns.append((re.compile(r"\b(%s)\b" % "|".join(map(re.escape, self.keywords[self.file_ending]))), curses.color_pair(1))) # checks for keywords of current language, join produces an or ("|") arragment and escape reformats potential special characters
+#            self.patterns.append((re.compile(r"\b(%s)\b" % "|".join(map(re.escape, self.keywords[self.file_ending]))), curses.color_pair(1))) # checks for keywords of current language, join produces an or ("|") arragment and escappe reformats potential special characters
 #
 #            self.patterns.append((re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\''), curses.color_pair(2))) # Strings
 #            self.patterns.append((re.compile(r'#.*'), curses.color_pair(4))), # Comments
@@ -311,55 +324,50 @@ class Perry:
 
 
     def draw_body(self):
-        shell_start_x = curses.COLS - (curses.COLS // self.shell_size)
+        shell_start_x = self.width - (self.width // self.shell_size)
         if not self.saved_file.settings["python_shell"]:
-            overflow_position = curses.COLS - 2
+            overflow_position = self.width - 2
             textwidth = self.textwidth
 
         else:
-            textwidth = self.textwidth - curses.COLS // self.shell_size # - 5
+            textwidth = self.textwidth - self.width // self.shell_size #- 5
             overflow_position = shell_start_x - 2
 
         for i in range(self.buffer_height):
             start = textwidth * (self.x // textwidth)
             end = textwidth * (self.x // textwidth + 1)
 
-            # if self.saved_file.settings["python_shell"]:
-            #     end -= 5
-
-
             buffer_index = self.scroll_start + i
 
             if buffer_index >= len(self.text):
                 break
 
-            if i + 1 >= curses.LINES:  # <-- prevent drawing off-screen
+            if i + 1 >= self.height:  # <-- prevent drawing off-screen
                  break
 
             line = self.text[buffer_index]
 
             if self.saved_file.settings["line_numbers"]:
-                linenumber_len = len(str(len(self.text)))
-                self.PRE_TEXT_WIDTH = 5 + linenumber_len
-                self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{linenumber_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
+                line_number_len = self.line_number_len
+                self.PRE_TEXT_WIDTH = 5 + line_number_len
+                self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{line_number_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
             else:
                 self.PRE_TEXT_WIDTH = 2
 
-            self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
+            if self.x // textwidth == 0:
+                self.PRE_TEXT_WIDTH -= 2
+            else:
+                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
+
+            self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
 
             if self.saved_file.settings["python_shell"]:
-#                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end])
-                self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
                 self.stdscr.addstr(i + 1, overflow_position, "|>" if line[end:] else "  ", curses.color_pair(7))
-
                 self.stdscr.addstr(i + 1, shell_start_x, "|")
-                pass
+                # sometime later the shell will be here
 
             else:
-#                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH, line[start:end])
-                self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
-#                time.sleep(1000000)
-                self.stdscr.addstr(i + 1, curses.COLS - 2, "|>" if line[end:] else "  ", curses.color_pair(7))
+                self.stdscr.addstr(i + 1, self.width - 2, "|>" if line[end:] else "  ", curses.color_pair(7))
 
 
 
@@ -369,13 +377,12 @@ class Perry:
 
     def draw_footer(self):
         if time.time() < self.footer_until:
-            height, width = self.stdscr.getmaxyx()
-            y = height - 1
+            y = self.height - 1
 
-            msg = self.footer_message[:width-1]
-            x = max(0, width - len(self.footer_message))
+            msg = self.footer_message[:self.width-1]
+            x = max(0, self.width - len(self.footer_message))
             try:
-                self.stdscr.addstr(y, x, msg)#[:curses.COLS])
+                self.stdscr.addstr(y, x, msg)#[:self.width])
             except curses.error:
                 pass
 
@@ -449,8 +456,9 @@ class Perry:
 
             case _ if char == curses.ascii.ctrl(ord('p')):
                 self.saved_file.settings["python_shell"] = not self.saved_file.settings["python_shell"]
+                self.resize()
 
-            case _ if char == curses.ascii.ctrl(ord('h')): #
+            case _ if char == curses.ascii.ctrl(ord('h')):
                 if self.saved_file.settings["remove_every_line_whitespaces"]:
                     text = [line.rstrip() for line in text]
                 else:
@@ -458,6 +466,13 @@ class Perry:
                 x = min(x ,len(text[y]))
             case _ if char == curses.ascii.ctrl(ord("n")):
                 self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
+                if self.saved_file.settings["line_numbers"]:
+                    self.PRE_TEXT_WIDTH = 5 + self.line_number_len
+                else:
+                    self.PRE_TEXT_WIDTH = 2
+                if x // self.textwidth == 0:
+                    self.PRE_TEXT_WIDTH -= 2
+                self.resize()
 
             case 27: # alt + ?
                 self.stdscr.nodelay(True)
