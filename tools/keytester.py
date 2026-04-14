@@ -5,8 +5,8 @@ def main(stdscr):
     curses.raw()
     stdscr.keypad(True)
     global x
-    while True:
-        x = stdscr.getch()
+    while True: # getkey, get_wch, getch
+        x = stdscr.getkey()
         stdscr.addstr(0, 0, f"{str(x):40s}" )
 
 try:
