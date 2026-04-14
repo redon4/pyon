@@ -42,6 +42,9 @@ colors = {
     ],
     "LINENUMBER":[
         9, curses.COLOR_MAGENTA, -1
+    ],
+    "SEARCH":[
+        10, -1, curses.COLOR_GREEN
     ]
 }
 
@@ -183,24 +186,30 @@ class Perry:
 
         self.height, self.width = self.stdscr.getmaxyx()
 
+        # search things
+        self.search = False
+        self.search_word = ""
+        self.search_no_move = False
+
+
+    def calc_textwidth(self):
+        return self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH - (self.width // self.shell_size if self.saved_file.settings["python_shell"] else 0)
+
     def resize(self):
         curses.update_lines_cols()
         self.height, self.width = self.stdscr.getmaxyx()
 
-        self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+        self.textwidth = self.calc_textwidth()
 
-        if self.x // self.textwidth == 0:
-            self.textwidth += 2
+
         self.buffer_height = self.height - 2
         self.x_middle = self.width // 2 - len(self.title) // 2
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
     def update_title(self):
-        width = self.stdscr.getmaxyx()[1]
-
         self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
-        self.x_middle = width // 2 - len(self.title) // 2
+        self.x_middle = self.width // 2 - len(self.title) // 2
 
     @property
     def line_number_len(self):
@@ -214,7 +223,7 @@ class Perry:
         self.tabspace = "    "
         self.PRE_TEXT_WIDTH = 5 + self.line_number_len if self.saved_file.settings["line_numbers"] else 2
         self.AFTER_TEXT_WIDTH = 2
-        self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+        #self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
         self.buffer_height = self.height - 1 - 1  # header and footer
 
 
@@ -224,9 +233,7 @@ class Perry:
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
-        if self.x // self.textwidth == 0:
-            self.PRE_TEXT_WIDTH -= 2
-            self.textwidth += 2
+
 
 
         #Header
@@ -284,6 +291,10 @@ class Perry:
                 re.compile(r"[ \t]+$"),
                 curses.color_pair(5)
             ))  # Trailing whitespace
+        self.patterns.append([
+            re.compile(r"%s" % (self.get_search_word())),
+            curses.color_pair(10)
+        ])
 
 
 
@@ -300,6 +311,16 @@ class Perry:
     def draw_text_color(self, y, x_draw_start, text, text_start, text_end):
         string_spans = [] # contains all strings
         self.stdscr.addstr(y, x_draw_start, text[text_start:text_end]) # for all not colored stuff
+
+
+        for i, element in enumerate(self.patterns):
+            if curses.color_pair(10) in element:
+                if self.search:
+                    self.patterns[i][0] = re.compile(r"%s" % (self.search_word))
+                else:
+                    self.patterns[i][0] = re.compile(r"")
+                break
+
         for pattern, color in self.patterns:
             for match in pattern.finditer(text):
                 start, end = match.span()
@@ -325,17 +346,26 @@ class Perry:
 
     def draw_body(self):
         shell_start_x = self.width - (self.width // self.shell_size)
-        if not self.saved_file.settings["python_shell"]:
-            overflow_position = self.width - 2
-            textwidth = self.textwidth
+        if self.saved_file.settings["python_shell"]:
+            overflow_position = shell_start_x -2
 
         else:
-            textwidth = self.textwidth - self.width // self.shell_size #- 5
-            overflow_position = shell_start_x - 2
+            oveflow_position = self.width -2
+
+        if self.saved_file.settings["line_numbers"]:
+            line_number_len = self.line_number_len
+            self.PRE_TEXT_WIDTH = 5 + line_number_len
+        else:
+            self.PRE_TEXT_WIDTH = 2
+
+        self.textwidth = self.calc_textwidth()
+        if self.x > self.textwidth:
+            self.PRE_TEXT_WIDTH -= 2
+            self.textwidth += 2
 
         for i in range(self.buffer_height):
-            start = textwidth * (self.x // textwidth)
-            end = textwidth * (self.x // textwidth + 1)
+            start = self.textwidth * (self.x // self.textwidth)
+            end = self.textwidth * (self.x // self.textwidth + 1)
 
             buffer_index = self.scroll_start + i
 
@@ -348,15 +378,10 @@ class Perry:
             line = self.text[buffer_index]
 
             if self.saved_file.settings["line_numbers"]:
-                line_number_len = self.line_number_len
-                self.PRE_TEXT_WIDTH = 5 + line_number_len
                 self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{line_number_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
-            else:
-                self.PRE_TEXT_WIDTH = 2
 
-            if self.x // textwidth == 0:
-                self.PRE_TEXT_WIDTH -= 2
-            else:
+
+            if self.x > self.textwidth:
                 self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
 
             self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
@@ -387,7 +412,9 @@ class Perry:
                 pass
 
 
-    def draw_screen(self):
+    def draw_screen(self,
+        search=False, search_i=0, search_cnt=0, search_word=""
+    ):
         self.stdscr.erase()
 
         # Title im Header
@@ -402,6 +429,12 @@ class Perry:
         # Footer
         self.draw_footer()
 
+        if search:
+            msg = f"{search_word} |{search_i + 1:{len(str(search_cnt))}d}/{search_cnt}|"
+            try:
+                self.stdscr.addstr(0, self.width // 4 - len(msg), msg)
+            except:
+                pass
 
 
         self.stdscr.refresh()
@@ -439,6 +472,7 @@ class Perry:
         x = self.x
         text = self.text
 
+
         char = self.stdscr.getch()
 
         match char:
@@ -460,19 +494,21 @@ class Perry:
 
             case _ if char == curses.ascii.ctrl(ord('h')):
                 if self.saved_file.settings["remove_every_line_whitespaces"]:
-                    text = [line.rstrip() for line in text]
+                    self.text = [line.rstrip() for line in self.text]
                 else:
-                    text[y] = text[y].rstrip()
-                x = min(x ,len(text[y]))
+                    self.text[y] = self.text[y].rstrip()
+                x = min(x ,len(self.text[y]))
             case _ if char == curses.ascii.ctrl(ord("n")):
                 self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
                 if self.saved_file.settings["line_numbers"]:
                     self.PRE_TEXT_WIDTH = 5 + self.line_number_len
                 else:
                     self.PRE_TEXT_WIDTH = 2
-                if x // self.textwidth == 0:
+                if self.x // self.textwidth == 0:
                     self.PRE_TEXT_WIDTH -= 2
                 self.resize()
+            case _ if char == curses.ascii.ctrl(ord("f")):
+                self.do_search()
 
             case 27: # alt + ?
                 self.stdscr.nodelay(True)
@@ -480,24 +516,24 @@ class Perry:
                 self.stdscr.nodelay(False)
 
                 if next_ch in (127, 8, curses.KEY_BACKSPACE):
-                    left_part = text[y][:x]
-                    right_part = text[y][x:]
-                    del_len = len(text[y])
+                    left_part = self.text[self.y][:self.x]
+                    right_part = self.text[self.y][self.x:]
+                    del_len = len(self.text[self.y])
                     # delete spaces and tabs
                     if left_part.endswith((" ", "\t")):
-                        text[y] = left_part.rstrip(" \t") + right_part
+                        self.text[self.y] = left_part.rstrip(" \t") + right_part
                     # delte word
                     elif re.search(r"\w$", left_part):
-                        text[y] = re.sub(r"\w+$", "", left_part) + right_part
+                        self.text[self.y] = re.sub(r"\w+$", "", left_part) + right_part
                     # delete special characters
                     else:
-                        text[y] = re.sub(r"[^\w\s]+$", "", left_part) + right_part
+                        self.text[self.y] = re.sub(r"[^\w\s]+$", "", left_part) + right_part
 
-                    del_len -= len(text[y])
-                    x -= del_len
+                    del_len -= len(self.text[self.y])
+                    self.x -= del_len
 
                 elif next_ch ==  ord("."):
-                        command = prompt(self.stdscr, "")
+                        command = prompt(self.stdscr, ":")
                         self.do_command(command)
 
                 elif next_ch == -1:
@@ -508,25 +544,25 @@ class Perry:
 
 
             case curses.KEY_UP: # Up
-                y = max(0, y - 1)
-                x = min(x, len(text[y]))
+                self.y = max(0, self.y - 1)
+                self.x = min(self.x, len(self.text[self.y]))
 
 
 
             case curses.KEY_DOWN: # Down
-                y = min(len(text) - 1, y + 1)
-                x = min(x, len(text[y]))
+                self.y = min(len(self.text) - 1, self.y + 1)
+                self.x = min(self.x, len(self.text[self.y]))
 
             case curses.KEY_LEFT: # Left
-                if x > 0:
-                    x -= 1
+                if self.x > 0:
+                    self.x -= 1
 
             case curses.KEY_RIGHT: # Right
-                if x < len(text[y]):
-                    x += 1
+                if self.x < len(self.text[self.y]):
+                    self.x += 1
 
             case 10 | 13 | curses.KEY_ENTER:  # Enter
-                line = text[y]
+                line = self.text[self.y]
                 if self.saved_file.settings["auto_indent"]:
                     indent = line[:len(line) - len(line.lstrip(" \t"))]
 
@@ -538,74 +574,74 @@ class Perry:
 
 
 
-                rest = line[x:].lstrip(" \t")
+                rest = line[self.x:].lstrip(" \t")
 
-                text[y] = line[:x]
+                self.text[self.y] = line[:self.x]
 
-                text.insert(y + 1, indent + rest)
+                self.text.insert(self.y + 1, indent + rest)
 
 
-                y += 1
+                self.y += 1
 
-                x = min(x, len(indent))
+                self.x = min(self.x, len(indent))
 
 
             case curses.KEY_BACKSPACE | 127: # Backspace
-                if x > 0:
-                    text[y] = text[y][:x-1] + text[y][x:]
-                    x -= 1
-                elif y > 0: # Zeilen zusammenfügen
-                    old_x = len(text[y-1])
-                    text[y-1] += text[y].lstrip()
-                    text.pop(y)
-                    y -= 1
-                    x = old_x
+                if self.x > 0:
+                    self.text[self.y] = self.text[self.y][:self.x-1] + self.text[self.y][self.x:]
+                    self.x -= 1
+                elif self.y > 0: # Zeilen zusammenfügen
+                    old_x = len(self.text[self.y-1])
+                    self.text[self.y-1] += self.text[self.y].lstrip()
+                    text.pop(self.y)
+                    self.y -= 1
+                    self.x = old_x
 
             case curses.KEY_DC: # Delete
-                if x < len(text[y]): # if x not at end of line
-                    text[y] = text[y][:x] + text[y][x+1:]
+                if self.x < len(self.text[self.y]): # if x not at end of line
+                    self.text[self.y] = self.text[self.y][:self.x] + self.text[self.y][self.x+1:]
 
-                elif x == len(text[y]) and y < len(text) - 1: # if x at end of line and y isnt the last line
-                    text[y] += text[y + 1].lstrip()
-                    text.pop(y + 1)
+                elif self.x == len(self.text[self.y]) and self.y < len(self.text) - 1: # if x at end of line and y isnt the last line
+                    self.text[self.y] += self.text[self.y + 1].lstrip()
+                    self.text.pop(self.y + 1)
 
             case 9: # Tab
-                text[y] = text[y][:x] + self.tabspace + text[y][x:]
-                x += len(self.tabspace)
+                self.text[self.y] = self.text[self.y][:self.x] + self.tabspace + self.text[self.y][self.x:]
+                self.x += len(self.tabspace)
 
             case curses.KEY_BTAB: # BackTab
-                for i in self.text[y][x-4:x]:
+                for i in self.text[self.y][self.x-4:self.x]:
                     if i != " ":
                         break
                 else:
-                    if text[y][x-4:x] == self.tabspace:
-                        text[y] = text[y][:x-4] + text[y][x:]
+                    if self.text[self.y][self.x-4:self.x] == self.tabspace:
+                        self.text[self.y] = self.text[self.y][:self.x-4] + self.text[self.y][self.x:]
                         x -= len(self.tabspace)
 
 
             case 544: # ctrl + Home
-                y = 0
-                x = 0
+                self.y = 0
+                self.x = 0
 
             case 539: # ctrl + End
-                y = len(text) - 1
-                x = len(text[-1])
+                self.y = len(self.text) - 1
+                self.x = len(self.text[-1])
             case curses.KEY_HOME: # Home
-                x = 0
+                self.x = 0
 
             case curses.KEY_END: # End
-                x = len(text[y])
+                self.x = len(self.text[self.y])
 
             case curses.KEY_PPAGE: # Page up
-                y = max(0, y - self.buffer_height + 1) #
+                self.y = max(0, self.y - self.buffer_height + 1) #
                 self.scroll_start = max(0, self.scroll_start - self.buffer_height + 1)
-                x = min(x, len(text[y]))
+                self.x = min(self.x, len(self.text[self.y]))
 
 
             case curses.KEY_NPAGE: # Page down
-                y = min(len(text) - 1, y + self.buffer_height - 1)
-                self.scroll_start = min(len(text) - self.buffer_height, self.scroll_start + self.buffer_height - 1)
-                x = min(x, len(text[y]))
+                self.y = min(len(self.text) - 1, self.y + self.buffer_height - 1)
+                self.scroll_start = min(len(self.text) - self.buffer_height, self.scroll_start + self.buffer_height - 1)
+                self.x = min(self.x, len(self.text[self.y]))
 
             case curses.KEY_RESIZE:
                 self.resize()
@@ -613,13 +649,68 @@ class Perry:
 
 
             case _ if 32 <= char <= 126:  # Druckbare Zeichen
-                text[y] = text[y][:x] + chr(char) + text[y][x:]
-                x += 1
+                self.text[self.y] = self.text[self.y][:self.x] + chr(char) + self.text[self.y][self.x:]
+                self.x += 1
+
+        if self.search_no_move:
+            self.y = y
+            self.x = x
+            self.text = text
+            self.search_no_move = False
+
+    def get_search_word(self):
+        return self.search_word
+
+    def do_search(self, command=False):
+        self.search = True
+        self.search_no_move = False
+        if command:
+            if command[-1] == "no move" or command[-1] == "no-move" or command[-1] == "nm":
+                self.search_no_move = True
+        self.search_word = prompt(self.stdscr, "Search for: ")
+        if not self.search_word:
+            return
+        name = self.search_word
+        cnt=0
+        for line in self.text:
+            cnt += line.count(name)
+        g=True
+        while g:
+            start=[0,0]
+            for i in range(cnt):
+                try:
+                    self.stdscr.addstr(self.height, 0, f"{i}/{cnt}")
+                except:
+                    pass
+                for line_index in range(start[0], len(self.text)):
+                    line = self.text[line_index]
+
+                    if line_index == start[0]:
+                        part = line[start[1]:]
+                    else:
+                        part = line
+                    index = part.find(name)
+
+                    if index != -1:
+                        self.x = index + (start[1] if line_index == start[0] else 0)
+
+                        start = [line_index, index + 1 + (start[1] if line_index == start[0] else 0)]
+
+                        self.y = line_index
+
+                        self.update_scroll()
+                        self.draw_screen(search=True, search_i=i, search_cnt=cnt, search_word=name)
+                        self.update_cursor()
+                        break
+                inp = self.stdscr.getkey()
+                if inp == "KEY_ENTER":
+                    continue
+                elif inp == "KEY_DC":
+                    g = False
+                    self.search = False
+                    break
 
 
-        self.y = y
-        self.x = x
-        self.text = text
 
     def do_command(self, command):
         command = command.split(" ")
@@ -645,7 +736,7 @@ class Perry:
                 self.game = False
             case "w" | "write" | "save":
                 self.write_file()
-            case "wq":
+            case "wq" | "x":
                 self.write_file()
                 #self.stdscr.redrawwin()
                 #self.stdscr.refresh()
@@ -660,6 +751,8 @@ class Perry:
                 subprocess.call(f"mv {self.current_file} {new_name}", shell=True)
                 self.current_file = new_name
                 self.update_title()
+            case "search" | "srch":
+                self.do_search(command)
 
 
 
