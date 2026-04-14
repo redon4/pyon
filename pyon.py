@@ -191,21 +191,27 @@ class Perry:
         self.search_word = ""
         self.search_no_move = False
 
-
-    def calc_textwidth(self):
-        return self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH - (self.width // self.shell_size if self.saved_file.settings["python_shell"] else 0)
-
     def resize(self):
         curses.update_lines_cols()
         self.height, self.width = self.stdscr.getmaxyx()
 
-        self.textwidth = self.calc_textwidth()
-
+        self.update_layout()
 
         self.buffer_height = self.height - 2
         self.x_middle = self.width // 2 - len(self.title) // 2
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
+
+    def update_layout(self):
+        if self.saved_file.settings["line_numbers"]:
+            self.PRE_TEXT_WIDTH = 5 + self.line_number_len
+        else:
+            self.PRE_TEXT_WIDTH = 2
+        self.AFTER_TEXT_WIDTH = 2
+
+        shell_width = self.width // self.shell_size if self.saved_file.settings["python_shell"] else 0
+
+        self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH - shell_width
 
     def update_title(self):
         self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
@@ -349,23 +355,23 @@ class Perry:
             overflow_position = shell_start_x -2
 
         else:
-            oveflow_position = self.width -2
+            overflow_position = self.width -2
 
-        if self.saved_file.settings["line_numbers"]:
-            line_number_len = self.line_number_len
-            self.PRE_TEXT_WIDTH = 5 + line_number_len
-        else:
-            self.PRE_TEXT_WIDTH = 2
+        #if self.saved_file.settings["line_numbers"]:
+        #    line_number_len = self.line_number_len
+        #    self.PRE_TEXT_WIDTH = 5 + line_number_len
+        #else:
+        #    self.PRE_TEXT_WIDTH = 2
 
-        self.textwidth = self.calc_textwidth()
-        if self.x > self.textwidth:
-            self.PRE_TEXT_WIDTH -= 2
-            self.textwidth += 2
+        #self.textwidth = self.calc_textwidth()
+        #if self.x > self.textwidth:
+        #    self.PRE_TEXT_WIDTH -= 2
+        #    self.textwidth += 2
+
+        start = self.textwidth * (self.x // self.textwidth)
+        end = self.textwidth * (self.x // self.textwidth + 1)
 
         for i in range(self.buffer_height):
-            start = self.textwidth * (self.x // self.textwidth)
-            end = self.textwidth * (self.x // self.textwidth + 1)
-
             buffer_index = self.scroll_start + i
 
             if buffer_index >= len(self.text):
@@ -377,10 +383,10 @@ class Perry:
             line = self.text[buffer_index]
 
             if self.saved_file.settings["line_numbers"]:
-                self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{line_number_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
+                self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{self.line_number_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
 
 
-            if self.x > self.textwidth:
+            if start > 0:
                 self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
 
             self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
@@ -429,7 +435,7 @@ class Perry:
         self.draw_footer()
 
         if search:
-            msg = f"{search_word} |{search_i + 1:{len(str(search_cnt))}d}/{search_cnt}|"
+            msg = f"{search_word} |{search_i + 1:{len(str(search_cnt))}d}/{search_cnt}| \"q\" to quit"
             try:
                 self.stdscr.addstr(0, self.width // 4 - len(msg), msg)
             except:
@@ -449,12 +455,8 @@ class Perry:
                 self.scroll_start = self.y - self.buffer_height + 1
 
     def update_cursor(self):
-        if self.saved_file.settings["python_shell"]:
-            textwidth = self.textwidth - self.width // self.shell_size
-        else:
-            textwidth = self.textwidth
         relative_y = self.y - self.scroll_start
-        self.stdscr.move(relative_y + 1, self.x % textwidth + self.PRE_TEXT_WIDTH)
+        self.stdscr.move(relative_y + 1, self.x % self.textwidth + self.PRE_TEXT_WIDTH)
 
     def write_file(self):
         if not self.current_file:
@@ -469,7 +471,7 @@ class Perry:
     def do_input(self):
         y = self.y
         x = self.x
-        text = self.text
+        scroll_start = self.scroll_start
 
 
         char = self.stdscr.getch()
@@ -489,16 +491,17 @@ class Perry:
 
             case _ if char == curses.ascii.ctrl(ord('p')):
                 self.saved_file.settings["python_shell"] = not self.saved_file.settings["python_shell"]
-                self.resize()
+                self.update_layout()
 
             case _ if char == curses.ascii.ctrl(ord('h')):
                 if self.saved_file.settings["remove_every_line_whitespaces"]:
                     self.text = [line.rstrip() for line in self.text]
                 else:
                     self.text[y] = self.text[y].rstrip()
-                x = min(x ,len(self.text[y]))
+                self.x = min(x ,len(self.text[y]))
             case _ if char == curses.ascii.ctrl(ord("n")):
                 self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
+                self.update_layout()
 
             case _ if char == curses.ascii.ctrl(ord("f")):
                 self.do_search()
@@ -586,7 +589,7 @@ class Perry:
                 elif self.y > 0: # Zeilen zusammenfügen
                     old_x = len(self.text[self.y-1])
                     self.text[self.y-1] += self.text[self.y].lstrip()
-                    text.pop(self.y)
+                    self.text.pop(self.y)
                     self.y -= 1
                     self.x = old_x
 
@@ -609,7 +612,7 @@ class Perry:
                 else:
                     if self.text[self.y][self.x-4:self.x] == self.tabspace:
                         self.text[self.y] = self.text[self.y][:self.x-4] + self.text[self.y][self.x:]
-                        x -= len(self.tabspace)
+                        self.x -= len(self.tabspace)
 
 
             case 544: # ctrl + Home
@@ -645,21 +648,22 @@ class Perry:
                 self.text[self.y] = self.text[self.y][:self.x] + chr(char) + self.text[self.y][self.x:]
                 self.x += 1
 
-        if self.search_no_move:
+        if self.search_no_move and not self.search:
             self.y = y
             self.x = x
-            self.text = text
+            self.scroll_start = scroll_start
             self.search_no_move = False
 
     def get_search_word(self):
         return self.search_word
 
-    def do_search(self, command=False):
+    def do_search(self, command=[]):
         self.search = True
         self.search_no_move = False
         if command:
-            if command[-1] == "no move" or command[-1] == "no-move" or command[-1] == "nm":
+            if any(text in ("nm", "no-move", "nomove") for text in command):
                 self.search_no_move = True
+
         self.search_word = prompt(self.stdscr, "Search for: ")
         if not self.search_word:
             return
@@ -668,13 +672,15 @@ class Perry:
         for line in self.text:
             cnt += line.count(name)
         g=True
+        first=True
         while g:
-            start=[0,0]
+            if first and not (any(text in ("fs", "from-start", "fromstart") for text in command)):
+                start=[self.y, self.x]
+                first = False
+            else:
+                start=[0,0]
             for i in range(cnt):
-                try:
-                    self.stdscr.addstr(self.height, 0, f"{i}/{cnt}")
-                except:
-                    pass
+
                 for line_index in range(start[0], len(self.text)):
                     line = self.text[line_index]
 
@@ -692,17 +698,20 @@ class Perry:
                         self.y = line_index
 
                         self.update_scroll()
+
+                        self.scroll_start = self.y - self.buffer_height // 2
+
                         self.draw_screen(search=True, search_i=i, search_cnt=cnt, search_word=name)
                         self.update_cursor()
                         break
-                inp = self.stdscr.getkey()
-                if inp == "KEY_ENTER":
-                    continue
-                elif inp == "KEY_DC" or inp == "d":
-                    g = False
-                    self.search = False
-                    break
-
+                enter=False
+                while not enter:
+                    inp = self.stdscr.getkey()
+                    if inp == "\n":
+                        enter = True
+                    elif inp == "KEY_DC" or inp == "q":
+                        self.search = False
+                        return
 
 
     def do_command(self, command):
@@ -792,7 +801,7 @@ curses.wrapper(main)
 
 
 """
-# Top of file, after imports
+# Graveyard
 
 
 def get_python_highlight(line):
