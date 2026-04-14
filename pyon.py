@@ -209,7 +209,6 @@ class Perry:
 
     def update_title(self):
         self.title = (self.current_file or "[No Name]").rsplit("/", 1)[-1]
-        self.x_middle = self.width // 2 - len(self.title) // 2
 
     @property
     def line_number_len(self):
@@ -451,7 +450,7 @@ class Perry:
 
     def update_cursor(self):
         if self.saved_file.settings["python_shell"]:
-            textwidth = self.textwidth - self.stdscr.getmaxyx()[1] // self.shell_size
+            textwidth = self.textwidth - self.width // self.shell_size
         else:
             textwidth = self.textwidth
         relative_y = self.y - self.scroll_start
@@ -500,13 +499,7 @@ class Perry:
                 x = min(x ,len(self.text[y]))
             case _ if char == curses.ascii.ctrl(ord("n")):
                 self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
-                if self.saved_file.settings["line_numbers"]:
-                    self.PRE_TEXT_WIDTH = 5 + self.line_number_len
-                else:
-                    self.PRE_TEXT_WIDTH = 2
-                if self.x // self.textwidth == 0:
-                    self.PRE_TEXT_WIDTH -= 2
-                self.resize()
+
             case _ if char == curses.ascii.ctrl(ord("f")):
                 self.do_search()
 
@@ -705,7 +698,7 @@ class Perry:
                 inp = self.stdscr.getkey()
                 if inp == "KEY_ENTER":
                     continue
-                elif inp == "KEY_DC":
+                elif inp == "KEY_DC" or inp == "d":
                     g = False
                     self.search = False
                     break
