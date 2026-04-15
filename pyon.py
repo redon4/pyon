@@ -228,7 +228,7 @@ class Perry:
         self.tabspace = "    "
         self.PRE_TEXT_WIDTH = 5 + self.line_number_len if self.saved_file.settings["line_numbers"] else 2
         self.AFTER_TEXT_WIDTH = 2
-        #self.textwidth = self.width - self.PRE_TEXT_WIDTH - self.AFTER_TEXT_WIDTH
+
         self.buffer_height = self.height - 1 - 1  # header and footer
 
 
@@ -238,8 +238,8 @@ class Perry:
 
         self.scroll_start = max(0, min(self.scroll_start, max(0, len(self.text) - self.buffer_height)))
 
-
-
+        # Shell size (1 / x) * screen
+        self.shell_size = self.saved_file.settings["shell_size"]
 
         #Header
         self.update_title()
@@ -248,9 +248,6 @@ class Perry:
 
         # \|/ is for quitting the editor
         self.game = True
-
-        # How much of the screen the shell gets (1 / x)
-        self.shell_size = self.saved_file.settings["shell_size"]
 
         # Syntax highliting
             # Keywords
@@ -386,18 +383,20 @@ class Perry:
                 self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{self.line_number_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
 
 
-            if start > 0:
-                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|" if line[:start] and len(line) > start  else "  ", curses.color_pair(7))
+            if line[:start] and len(line) > start:
+                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|", curses.color_pair(colors["OVERFLOW"][0]))
+            else:
+                self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, " |", curses.color_pair(colors["LINENUMBER"][0]))
+            #else:
+            #    self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, " |", curses.color_pair(colors["LINENUMBER"][0]))
 
             self.draw_text_color(i + 1, self.PRE_TEXT_WIDTH, line, start, end)
 
             if self.saved_file.settings["python_shell"]:
-                self.stdscr.addstr(i + 1, overflow_position, "|>" if line[end:] else "  ", curses.color_pair(7))
                 self.stdscr.addstr(i + 1, shell_start_x, "|")
                 # sometime later the shell will be here
 
-            else:
-                self.stdscr.addstr(i + 1, self.width - 2, "|>" if line[end:] else "  ", curses.color_pair(7))
+            self.stdscr.addstr(i + 1, overflow_position, "|>" if line[end:] else "  ", curses.color_pair(7))
 
 
 
@@ -562,7 +561,7 @@ class Perry:
                 if self.saved_file.settings["auto_indent"]:
                     indent = line[:len(line) - len(line.lstrip(" \t"))]
 
-                    for end_symbol in (":", "(", "[", "{"): # add an indent if it should be there
+                    for end_symbol in (":", "(", "[", "{", ","): # add an indent if it should be there
                         if line[:x].rstrip().endswith(end_symbol):
                             indent += self.tabspace
                 else:
@@ -661,7 +660,7 @@ class Perry:
         self.search = True
         self.search_no_move = False
         if command:
-            if any(text in ("nm", "no-move", "nomove") for text in command):
+            if any(text in ("nm", "no-move", "nomove", "no_move") for text in command):
                 self.search_no_move = True
 
         self.search_word = prompt(self.stdscr, "Search for: ")
@@ -674,7 +673,7 @@ class Perry:
         g=True
         first=True
         while g:
-            if first and not (any(text in ("fs", "from-start", "fromstart") for text in command)):
+            if first and not (any(text in ("fs", "from-start", "fromstart", "from_start") for text in command)):
                 start=[self.y, self.x]
                 first = False
             else:
