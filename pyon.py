@@ -73,7 +73,9 @@ class save_file:
             "show_spaces":True,
             "line_numbers":True,
 
-            "linenumber_filling":"-",
+            "linenumber_filling":" ",
+            "linenumber_outline":" ",
+            "always_show_staring_line":True,
 
             "auto_indent":True,
 
@@ -380,12 +382,12 @@ class Perry:
             line = self.text[buffer_index]
 
             if self.saved_file.settings["line_numbers"]:
-                self.stdscr.addstr(i + 1, 0, f" |{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{self.line_number_len}s}|", curses.color_pair(colors["LINENUMBER"][0]))
+                self.stdscr.addstr(i + 1, 0, f" {self.saved_file.settings['linenumber_outline']}{str(buffer_index + 1):{str(self.saved_file.settings['linenumber_filling'])[0]}>{self.line_number_len}s}{self.saved_file.settings['linenumber_outline']} ", curses.color_pair(colors["LINENUMBER"][0]))
 
 
             if line[:start] and len(line) > start:
                 self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, "<|", curses.color_pair(colors["OVERFLOW"][0]))
-            else:
+            elif self.saved_file.settings["line_numbers"] or self.saved_file.settings["always_show_staring_line"]:
                 self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, " |", curses.color_pair(colors["LINENUMBER"][0]))
             #else:
             #    self.stdscr.addstr(i + 1, self.PRE_TEXT_WIDTH - 2, " |", curses.color_pair(colors["LINENUMBER"][0]))
@@ -394,6 +396,9 @@ class Perry:
 
             if self.saved_file.settings["python_shell"]:
                 self.stdscr.addstr(i + 1, shell_start_x, "|")
+                coming_soon_text = "Coming soon! (or later)"[:self.width // self.shell_size - 2]
+                coming_soon_placement = shell_start_x + ((self.width // self.shell_size) // 2 - len(coming_soon_text) // 2)
+                self.stdscr.addstr(i + 1, coming_soon_placement, coming_soon_text)
                 # sometime later the shell will be here
 
             self.stdscr.addstr(i + 1, overflow_position, "|>" if line[end:] else "  ", curses.color_pair(7))
@@ -580,6 +585,8 @@ class Perry:
 
                 self.x = min(self.x, len(indent))
 
+                self.update_layout()
+
 
             case curses.KEY_BACKSPACE | 127: # Backspace
                 if self.x > 0:
@@ -591,6 +598,7 @@ class Perry:
                     self.text.pop(self.y)
                     self.y -= 1
                     self.x = old_x
+                self.update_layout()
 
             case curses.KEY_DC: # Delete
                 if self.x < len(self.text[self.y]): # if x not at end of line
@@ -599,6 +607,7 @@ class Perry:
                 elif self.x == len(self.text[self.y]) and self.y < len(self.text) - 1: # if x at end of line and y isnt the last line
                     self.text[self.y] += self.text[self.y + 1].lstrip()
                     self.text.pop(self.y + 1)
+                self.update_layout()
 
             case 9: # Tab
                 self.text[self.y] = self.text[self.y][:self.x] + self.tabspace + self.text[self.y][self.x:]
@@ -738,16 +747,14 @@ class Perry:
             case "w" | "write" | "save":
                 self.write_file()
             case "wq" | "x":
-                self.write_file()
-                #self.stdscr.redrawwin()
-                #self.stdscr.refresh()
-                #curses.napms(500)
-                self.game = False
+                self.write_file() # save
+                self.game = False # quit
             case "rn" | "rename":
 #                dir = os.path.abspath(os.path.dirname(__file__))
 #                old_path = os.path.join(dir, self.current_file)
 
                 new_name = prompt(self.stdscr, "New name: ")
+                new_name = os.path.join(os.path.dirname(self.current_file), new_name)
 #                new_path = os.path.join(dir, new_name)
                 subprocess.call(f"mv {self.current_file} {new_name}", shell=True)
                 self.current_file = new_name
