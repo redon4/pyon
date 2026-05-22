@@ -1,5 +1,0 @@
-- overflow when shell is active
-
-- use get_wch for unicode support
-
-- bug where ~/.bashrc crashes randomly
