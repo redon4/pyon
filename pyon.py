@@ -1,7 +1,7 @@
 import curses # for perry
 import curses.ascii # for the curses.ascii.ctrl
 import sys # for shell and other stuff
-import pickle # for settings saving
+import json # for settings saving
 from collections import Counter # for the pos saving
 import argparse # for the file arguments
 from io import StringIO # for the shell
@@ -66,7 +66,7 @@ class CaptureConsole(code.InteractiveConsole):
 
 class save_file:
     def __init__(self):
-        self.positions = Counter() # so that the default value is 0
+        self.positions = {}
 
         self.settings = { # default settings
             "center_scroll":False,
@@ -87,27 +87,39 @@ class save_file:
             "syntax_color":None
         }
 
-        self.filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "save_data.pkl"))
+        self.filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "save_data.json"))
 
     @classmethod
     def load(clc):
-        r=0
         standard = clc()
         try:
-            with open(standard.filepath , "rb") as f:
-                r = pickle.load(f)
+            with open(standard.filepath , "r") as f:
+                data = json.load(f)
+
+                standard.__dict__.update(data)
 
         except FileNotFoundError:
-            r = standard
+            #r = standard
             #inp = prompt(stdscr, f"\"{self.filepath}\", type another to change: ")
             #if inp:
             #    r.filepath = os.path.expanduser(inp)
+            pass
 
-        return r
+        except JSONDecodeError:
+            raise Exception("Invalid save_data.json")
+
+        return standard
 
     def save(self):
-        with open(self.filepath , "wb") as f:
-            pickle.dump(self, f)
+        d = self.__dict__.copy()
+        d.pop("filepath", None)
+
+        try:
+            with open(self.filepath , "w", encoding="utf-8") as f:
+                json.dump(d, f, indent=2, ensure_ascii=False)
+
+        except AttributeError:
+            raise Exception("No filename found")
 
 
 def prompt(stdscr, message):
@@ -176,7 +188,7 @@ class Perry:
 
 
         commands = {
-            "toggle show_whitespace": lambda: not self.saved_file["show_whitespace"]
+            "toggle show_whitespace": lambda: not self.saved_file.settings["show_whitespace"]
         }
 
         # for command in commands:
@@ -756,7 +768,8 @@ class Perry:
                 new_name = prompt(self.stdscr, "New name: ")
                 new_name = os.path.join(os.path.dirname(self.current_file), new_name)
 #                new_path = os.path.join(dir, new_name)
-                subprocess.call(f"mv {self.current_file} {new_name}", shell=True)
+#                subprocess.call(f"mv {self.current_file} {new_name}", shell=True)
+                os.rename(self.current_file, new_name)
                 self.current_file = new_name
                 self.update_title()
             case "search" | "srch":
