@@ -547,7 +547,7 @@ class Perry:
                 elif next_ch ==  ord("."):
                         command = prompt(self.stdscr, ":")
                         self.do_command(command)
-                
+
                 elif next_ch == ord("k"): # up
                     self.y = max(0, self.y - 1)
                     self.x = min(self.x, len(self.text[self.y]))
@@ -565,7 +565,6 @@ class Perry:
                 elif next_ch == ord("l"): # Right
                     if self.x < len(self.text[self.y]):
                         self.x += 1
-                        
 
                 elif next_ch == -1:
                    raise Exception("escape key")
@@ -597,8 +596,13 @@ class Perry:
                 if self.saved_file.settings["auto_indent"]:
                     indent = line[:len(line) - len(line.lstrip(" \t"))]
 
+                    if self.file_ending== "py":
+                        comment = "#"
+                    else:
+                        comment = "//"
+
                     for end_symbol in (":", "(", "[", "{", ","): # add an indent if it should be there
-                        if line[:x].rstrip().endswith(end_symbol):
+                        if line[:x].split(comment, 1)[0].rstrip().endswith(end_symbol):
                             indent += self.tabspace
                 else:
                     indent = ""
