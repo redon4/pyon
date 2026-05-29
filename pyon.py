@@ -547,6 +547,25 @@ class Perry:
                 elif next_ch ==  ord("."):
                         command = prompt(self.stdscr, ":")
                         self.do_command(command)
+                
+                elif next_ch == ord("k"): # up
+                    self.y = max(0, self.y - 1)
+                    self.x = min(self.x, len(self.text[self.y]))
+
+
+
+                elif next_ch == ord("j"): # down
+                    self.y = min(len(self.text) - 1, self.y + 1)
+                    self.x = min(self.x, len(self.text[self.y]))
+
+                elif next_ch == ord("h"): # Left
+                    if self.x > 0:
+                        self.x -= 1
+
+                elif next_ch == ord("l"): # Right
+                    if self.x < len(self.text[self.y]):
+                        self.x += 1
+                        
 
                 elif next_ch == -1:
                    raise Exception("escape key")
