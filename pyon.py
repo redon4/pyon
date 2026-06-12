@@ -66,8 +66,6 @@ class CaptureConsole(code.InteractiveConsole):
 
 class save_file:
     def __init__(self):
-        self.positions = {}
-
         self.settings = { # default settings
             "center_scroll":False,
             "show_spaces":True,
@@ -86,6 +84,8 @@ class save_file:
             "remove_every_line_whitespaces":True,
             "syntax_color":None
         }
+
+        self.positions = {}
 
         self.filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "save_data.json"))
 
