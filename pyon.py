@@ -151,7 +151,6 @@ class Perry:
             if "." in self.current_file:
                 self.file_ending = self.current_file.rsplit(".", 1)[-1] if self.current_file else "txt"
             else:
-                self.current_file += ".txt"
                 self.file_ending = "txt"
         else:
             self.file_ending = "txt"
@@ -522,7 +521,7 @@ class Perry:
             case _ if char == curses.ascii.ctrl(ord("f")):
                 self.do_search()
 
-            case 27: # alt + ?
+            case 27: # alt +
                 self.stdscr.nodelay(True)
                 next_ch = self.stdscr.getch()
                 self.stdscr.nodelay(False)
@@ -567,10 +566,9 @@ class Perry:
                         self.x += 1
 
                 elif next_ch == -1:
-                   raise Exception("escape key")
+                    self.set_footer("Alt + Escape", 0.01)
                 else:
-                   raise Exception(f"alt + {next_ch}")
-
+                    self.set_footer(f"Alt + {chr(next_ch)}", 0.01)
 
 
             case curses.KEY_UP: # Up
@@ -687,7 +685,7 @@ class Perry:
 
 
 
-            case _ if 32 <= char <= 126:  # Druckbare Zeichen
+            case _ if 32 <= char <= 126:  # Normal Letters
                 self.text[self.y] = self.text[self.y][:self.x] + chr(char) + self.text[self.y][self.x:]
                 self.x += 1
 
@@ -782,8 +780,8 @@ class Perry:
             case "w" | "write" | "save":
                 self.write_file()
             case "wq" | "x":
-                self.write_file() # save
-                self.game = False # quit
+                self.write_file()
+                self.game = False
             case "rn" | "rename":
 #                dir = os.path.abspath(os.path.dirname(__file__))
 #                old_path = os.path.join(dir, self.current_file)
@@ -833,84 +831,3 @@ def main(stdscr):
 
 
 curses.wrapper(main)
-
-
-
-
-
-
-
-
-
-"""
-# Graveyard
-
-
-def get_python_highlight(line):
-    highlights = []
-    try:
-        for tok in tokenize.generate_tokens(StringIO(line).readline):
-            tok_type = tok.type
-            start_col, end_col = tok.start[1], tok.end[1]
-
-            if tok_type == tokenize.COMMENT:
-                highlights.append((start_col, end_col, curses.color_pair(COMMENT_COLOR)))
-            elif tok_type == tokenize.STRING:
-                highlights.append((start_col, end_col, curses.color_pair(STRING_COLOR)))
-            elif tok_type == tokenize.NUMBER:
-                highlights.append((start_col, end_col, curses.color_pair(NUMBER_COLOR)))
-            elif tok_type == tokenize.NAME:
-                if tok.string in keyword.kwlist:
-                    highlights.append((start_col, end_col, curses.color_pair(KEYWORD_COLOR)))
-            # You can add more token types if neededo
-    except tokenize.TokenError:
-        pass
-    return highlights
-
-
-# Example keyword mappings for multiple languages
-language_keywords = {
-    "python": ["def", "class", "import", "for", "while", "if", "else", "return"],
-    "javascript": ["function", "var", "let", "const", "if", "else", "return"]
-}
-
-# Map file extension to language
-file_language = {
-    ".py": "python",
-    ".js": "javascript"
-}
-
-
-
-
-# In your curses init loop, make sure these pairs exist:
-
-
-
-
-class Setup:
-    def __init__(self):
-
-        self.compose={} # [id, lines count, (y_start, x, text, color)]
-        compose.append("Header":[1, (0, 1, "Pyon", None), (0, x_middle, title, None)])
-        compose.append("":["fill", (1, 0, f" |{'line_number':03d}|", 101010), (1, 6, "<|" if line])
-
-
-
-
-
-#curses.init_pair(KEYWORD_COLOR, curses.COLOR_BLUE, -1)
-#curses.init_pair(STRING_COLOR, curses.COLOR_GREEN, -1)
-#curses.init_pair(NUMBER_COLOR, curses.COLOR_MAGENTA, -1)
-#curses.init_pair(COMMENT_COLOR, curses.COLOR_RED, -1)
-#curses.init_pair(SPACE_COLOR, curses.COLOR_BLACK, curses.COLOR_GREEN)
-#curses.init_pair(FUNCTION_COLOR, curses.COLOR_CYAN, -1)
-#curses.init_pair(OVERFLOW_COLOR, curses.COLOR_CYAN, -1)
-#curses.init_pair(SELF_COLOR, curses.COLOR_MAGENTA, -1)
-
-
-
-
-
-
-"""
