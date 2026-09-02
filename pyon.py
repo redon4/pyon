@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import curses # for perry
 import curses.ascii # for the curses.ascii.ctrl
 import sys # for shell and other stuff
@@ -484,9 +486,9 @@ class Perry:
 
 
     def do_input(self):
-        y = self.y
-        x = self.x
-        scroll_start = self.scroll_start
+        start_y = self.y
+        start_x = self.x
+        start_scroll_start = self.scroll_start
 
 
         char = self.stdscr.getch()
@@ -514,6 +516,7 @@ class Perry:
                 else:
                     self.text[y] = self.text[y].rstrip()
                 self.x = min(x ,len(self.text[y]))
+
             case _ if char == curses.ascii.ctrl(ord("n")):
                 self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
                 self.update_layout()
@@ -564,7 +567,6 @@ class Perry:
                 elif next_ch == ord("l"): # Right
                     if self.x < len(self.text[self.y]):
                         self.x += 1
-
                 elif next_ch == -1:
                     self.set_footer("Alt + Escape", 0.01)
                 else:
@@ -690,9 +692,9 @@ class Perry:
                 self.x += 1
 
         if self.search_no_move and not self.search:
-            self.y = y
-            self.x = x
-            self.scroll_start = scroll_start
+            self.y = start_y
+            self.x = start_x
+            self.scroll_start = start_scroll_start
             self.search_no_move = False
 
     def get_search_word(self):
