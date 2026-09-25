@@ -602,7 +602,7 @@ class Perry:
                         comment = "//"
 
                     for end_symbol in (":", "(", "[", "{", ","): # add an indent if it should be there
-                        if line[:x].split(comment, 1)[0].rstrip().endswith(end_symbol):
+                        if line[:self.x].split(comment, 1)[0].rstrip().endswith(end_symbol):
                             indent += self.tabspace
                 else:
                     indent = ""
