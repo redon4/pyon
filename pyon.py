@@ -514,8 +514,8 @@ class Perry:
                 if self.saved_file.settings["remove_every_line_whitespaces"]:
                     self.text = [line.rstrip() for line in self.text]
                 else:
-                    self.text[y] = self.text[y].rstrip()
-                self.x = min(x ,len(self.text[y]))
+                    self.text[self.y] = self.text[self.y].rstrip()
+                self.x = min(self.x ,len(self.text[self.y]))
 
             case _ if char == curses.ascii.ctrl(ord("n")):
                 self.saved_file.settings["line_numbers"] = not self.saved_file.settings["line_numbers"]
