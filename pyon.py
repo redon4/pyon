@@ -148,7 +148,7 @@ class Perry:
         args = parser.parse_args()
 
         # Load Args/Filename
-        self.current_file = args.filename
+        self.current_file = os.path.normpath(os.path.abspath(args.filename)) if args.filename else ""
         if self.current_file:
             if "." in self.current_file:
                 self.file_ending = self.current_file.rsplit(".", 1)[-1] if self.current_file else "txt"
