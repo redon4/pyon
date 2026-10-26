@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 
-import curses # for perry
-import curses.ascii # for the curses.ascii.ctrl
 import sys # for shell and other stuff
+
+try:
+    import curses # for perry
+except ImportError:
+    print("If you're on Windows, please run\n\npip install windows-curses")
+    sys.exit(1)
+
+import curses.ascii # for the curses.ascii.ctrl
 import json # for settings saving
 from collections import Counter # for the pos saving
 import argparse # for the file arguments
