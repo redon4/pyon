@@ -12,18 +12,24 @@ def print_header(current_header, header_max_len):
 
 match sys.platform:
     case "linux":
-        path1 = r"~/.local/opt/pyon/pyon.py"
-        path2 = r"~/.local/bin/pyon"
-        profile_path = Path.home() / ".profile"
-        path_set_code = f'export PATH="$HOME/.local/bin:$PATH"'
+        path1 =         Path.home() / ".local" / "opt" / "pyon" / "pyon.py"
+        path2 =         Path.home() / ".local" / "bin" / "pyon"
+        profile_path =  Path.home() / ".profile"
+        path_set_code = 'export PATH="$HOME/.local/bin:$PATH"'
 
     case "win32":
+        print("Sry windows is not supported yet")
+        sys.exit(1)
+
         path1 = r""
         path2 = r""
         profile_path = r""
 
     # darwin is macos
     case "darwin":
+        print("Sry macos is not supported yet")
+        sys.exit(1)
+
         path1 = r""
         path2 = r""
         profile_path = r""
@@ -32,45 +38,51 @@ match sys.platform:
         print("Invalid OS")
         sys.exit(1)
 
-path1 = os.path.normpath(os.path.expanduser(path1))
-path2 = os.path.normpath(os.path.expanduser(path2))
-
-headers = ["SYMLINK", "PATH", "PATH CHANGE FILE"]
+headers = ["FOLDERS", "SYMLINK", "PATH", "PATH CHANGE FILE"]
 header_max_len = len(max(headers, key=len)) + 6
 
-print_header(headers[0], header_max_len)
 
+# FOLDERS #
+print_header(headers[0], header_max_len)
+try:
+    path2.parent.mkdir(parents=True)
+except FileExistsError:
+    print(f"Folder {os.path.dirname(path2)} already exists\n")
+else:
+    print(f"Folder {os.path.dirname(path2)} was created\n")
+
+
+# SYMLINK #
+print_header(headers[1], header_max_len)
 try:
     os.symlink(path1, path2)
     print("Link created successfully")
 
 except FileExistsError:
-    print("Symlink already exists.")
+    print("Symlink already exists")
 
 except PermissionError:
-    print("Permission denied: You might need admin rights.")
+    print("Permission denied: You might need admin rights")
 
 except OSError as e:
     print("OS error occurred:", e)
 
 print()
 
-print_header(headers[1], header_max_len)
+# PATH #
+print_header(headers[2], header_max_len)
 
-path = os.environ.get("PATH", "").split(os.pathsep)
+path = [Path(p) for p in os.environ.get("PATH", "").split(os.pathsep)]
 
-path = [os.path.normpath(p) for p in path]
-
-
-local_bin_dir = os.path.dirname(path2)
-if local_bin_dir in path:
-    print(f"\"{local_bin_dir}\" is in path\n")
+if path2.parent in path:
+    print(f"\"{path2.parent}\" is in path\n")
 
 else:
-    print(f"\"{local_bin_dir}\" is not in path\n")
+    print(f"\"{path2.parent}\" is not in path\n")
 
 
-    print_header(headers[2], header_max_len)
+    # PATH CHANGE FILE #
+    print_header(headers[3], header_max_len)
 
     # Checks if any line in profile is the same as the path_set_code
     if any(path_set_code == line for line in profile_path.read_text().splitlines()):
